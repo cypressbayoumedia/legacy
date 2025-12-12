@@ -1,0 +1,18 @@
+{
+    "indexes": [
+        {
+            "collectionGroup": "users",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "embedding_vector",
+                    "vectorSetConfig": {
+                        "dimension": 768,
+                        "flat": {}
+                    }
+                }
+            ]
+        }
+    ],
+    "fieldOverrides": []
+}
