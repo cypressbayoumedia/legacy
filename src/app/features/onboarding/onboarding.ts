@@ -171,15 +171,50 @@ export class Onboarding implements OnInit {
         this.interestedIn.set(current);
     }
 
-    isValidStep1() {
-        if (!this.gender() || !this.dob) return false;
-        // Simple age check
-        const age = new Date().getFullYear() - new Date(this.dob).getFullYear();
-        return age >= 18;
+    calculateAge(dobString: string): number {
+        const today = new Date();
+        const birthDate = new Date(dobString);
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
+        }
+        return age;
     }
 
-    nextStep() {
+    isValidStep1() {
+        // Only check for presence, not age, so we can handle the "under 18" case on click
+        return !!this.gender() && !!this.dob;
+    }
+
+    async nextStep() {
+        if (this.step() === 1) {
+            const age = this.calculateAge(this.dob);
+            if (age < 18) {
+                await this.disableAccount();
+                return;
+            }
+        }
         this.step.update(s => s + 1);
+    }
+
+    async disableAccount() {
+        const user = this.auth.currentUser;
+        if (user) {
+            try {
+                await this.firestore.updateUser(user.uid, {
+                    isDisabled: true,
+                    disableReason: 'Underage',
+                    dob: this.dob // Save DOB purely for record
+                });
+                alert("You must be 18 or older to use this application. Your account has been disabled.");
+                // Sign out or redirect
+                await this.auth.signOut();
+                this.router.navigate(['/']);
+            } catch (e) {
+                console.error("Error disabling account", e);
+            }
+        }
     }
 
     async finishOnboarding() {
