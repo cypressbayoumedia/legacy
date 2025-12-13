@@ -61,17 +61,42 @@ def extract_timestamps(data):
         for k, v in data.items():
             if isinstance(v, (dict, list)):
                 timestamps.extend(extract_timestamps(v))
-            elif any(key_part in k.lower() for key_part in ["timestamp", "date", "taken_at", "created"]):
-                 # Try to interpret v as a timestamp
-                 try:
-                     # Check for numeric timestamp (seconds or milliseconds)
-                     if isinstance(v, (int, float)):
-                         # heuristic: if > 3000000000, probably millis, else seconds
-                         # 3000000000 is around year 2065, so safe cut off for "seconds vs millis" logic for past dates
-                         ts = v if v < 3000000000 else v / 1000.0
-                         timestamps.append(ts)
-                 except:
-                     pass
+            elif isinstance(v, (int, float, str)):
+                # Key matching logical
+                lower_k = k.lower()
+                is_timestamp_key = any(key_part in lower_k for key_part in ["timestamp", "date", "taken_at", "created"])
+                
+                if is_timestamp_key:
+                     # Try to interpret v as a timestamp
+                     try:
+                         # 1. Check for numeric timestamp
+                         if isinstance(v, (int, float)):
+                             # heuristic: if > 3000000000, probably millis, else seconds
+                             ts = v if v < 3000000000 else v / 1000.0
+                             if ts > 0: # Filter out 0 or negative timestamps
+                                timestamps.append(ts)
+                                
+                         # 2. Check for String ISO format OR numeric string
+                         elif isinstance(v, str):
+                             # Case A: Numeric string (e.g. "167234234")
+                             if v.replace('.', '', 1).isdigit():
+                                 try:
+                                     val = float(v)
+                                     # Same heuristic as above
+                                     ts = val if val < 3000000000 else val / 1000.0
+                                     if ts > 0:
+                                        timestamps.append(ts)
+                                 except:
+                                     pass
+                             # Case B: Standard ISO
+                             else:
+                                 try:
+                                     dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+                                     timestamps.append(dt.timestamp())
+                                 except ValueError:
+                                     pass
+                     except:
+                         pass
     elif isinstance(data, list):
         for item in data:
             timestamps.extend(extract_timestamps(item))
@@ -80,7 +105,7 @@ def extract_timestamps(data):
 
 def validate_archive_age(bucket_name, file_path):
     """
-    Downloads ZIP from Storage and checks if it contains CONTENT older than 5 years.
+    Downloads ZIP from Storage and checks if it contains CONTENT older than 3 years.
     Returns True if valid, False otherwise.
     """
     try:
@@ -119,10 +144,10 @@ def validate_archive_age(bucket_name, file_path):
             oldest_year = datetime.fromtimestamp(oldest_content_timestamp).year
             logger.info(f"Oldest content year found: {oldest_year}")
             
-            if (current_year - oldest_year) >= 5:
+            if (current_year - oldest_year) >= 3:
                 return True
             else:
-                logger.warning(f"Validation Failed: Oldest content is from {oldest_year}, less than 5 years ago.")
+                logger.warning(f"Validation Failed: Oldest content is from {oldest_year}, less than 3 years ago.")
                 return False
         else:
              logger.warning("Validation Failed: No timestamped content found in archive.")
@@ -153,6 +178,11 @@ def extract_text_from_zip(bucket_name, file_path):
         
         with zipfile.ZipFile(BytesIO(zip_bytes)) as z:
             for filename in z.namelist():
+                lower_name = filename.lower()
+                # Skip ads and other irrelevant folders
+                if any(x in lower_name for x in ["ads_information", "ads_interests", "autofill_information"]):
+                    continue
+
                 if filename.lower().endswith(".json"):
                     try:
                         with z.open(filename) as f:
@@ -184,7 +214,8 @@ def extract_strings_from_json(data):
         for k, v in data.items():
             if isinstance(v, (dict, list)):
                 strings.extend(extract_strings_from_json(v))
-            elif isinstance(v, str) and any(key in k.lower() for key in ['caption', 'text', 'bio', 'title', 'comment', 'message']):
+            # Added 'description' (TikTok/YouTube), 'content' (Generic), 'body' (Emails/Posts), 'tweet' (Twitter/X)
+            elif isinstance(v, str) and any(key in k.lower() for key in ['caption', 'text', 'bio', 'title', 'comment', 'message', 'description', 'content', 'body', 'tweet']):
                 if len(v.strip()) > 3: # Ignore tiny strings
                     strings.append(v.strip())
     elif isinstance(data, list):
@@ -206,17 +237,32 @@ def extract_profile_picture(source_bucket: str, source_blob_name: str, user_id: 
         profile_pic_data = None
         
         with zipfile.ZipFile(BytesIO(zip_bytes)) as z:
-            for filename in z.namelist():
-                # Heuristic: Look for profile.jpg, avatar.jpg, or anything in a Profile/ folder
-                # Common Instagram structure: media/Profile/xxxx.jpg
-                # Common generic structure: profile_pic.jpg
-                lower_name = filename.lower()
-                if (lower_name.endswith(".jpg") or lower_name.endswith(".png") or lower_name.endswith(".jpeg")) and \
-                   ("profile" in lower_name or "avatar" in lower_name or "media/profile" in lower_name):
+            namelist = z.namelist()
+            
+            # Priority 1: explicitly look for personal_information/profile_photo.jpg (observed in user structure)
+            # or in media/profile/
+            candidates = []
+            
+            for filename in namelist:
+                lower = filename.lower()
+                if not (lower.endswith(".jpg") or lower.endswith(".png") or lower.endswith(".jpeg")):
+                    continue
                     
-                    logger.info(f"Found potential profile pic: {filename}")
-                    profile_pic_data = z.read(filename)
-                    break # Take the first match
+                # High priority: "personal_information" or "profile" in path
+                if "personal_information" in lower and "profile" in lower:
+                    candidates.append((10, filename))
+                elif "media/profile" in lower:
+                    candidates.append((8, filename))
+                elif "profile" in lower or "avatar" in lower:
+                    candidates.append((5, filename))
+            
+            # Sort by score descending
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            
+            if candidates:
+                best_match = candidates[0][1]
+                logger.info(f"Found profile pic match: {best_match} (score {candidates[0][0]})")
+                profile_pic_data = z.read(best_match)
         
         if profile_pic_data:
             # Upload to profile_pics/{user_id}.jpg
@@ -261,6 +307,17 @@ def process_user_data(data: dict) -> dict:
     if bucket_name and file_path:
         logger.info(f"Processing CloudEvent: gs://{bucket_name}/{file_path}")
         
+        # FIX: Infinite Loop Prevention
+        # If the file IS a profile pic we just uploaded, ignore it
+        if file_path.startswith("profile_pics/") or "profile_pics" in file_path:
+            logger.info("Ignoring profile_pics upload to prevent loop.")
+            return {"status": "ignored", "reason": "profile_pics upload"}
+
+        # FIX: Ignore non-zip files (prevents processing images as archives)
+        if not file_path.lower().endswith(".zip"):
+            logger.info(f"Ignoring non-zip file: {file_path}")
+            return {"status": "ignored", "reason": "not a zip file"}
+
         # FIX: Extract userId from directory structure: uploads/USER_ID/timestamp_filename
         parts = file_path.split('/')
         if len(parts) >= 2:
@@ -269,13 +326,24 @@ def process_user_data(data: dict) -> dict:
              # Fallback if structure is unexpected
              filename = parts[-1]
              user_id = filename.split('_')[0]
+
+        # FIX: Check if file still exists (handling Delete triggers)
+        try:
+            storage_client = storage.Client()
+            blob = storage_client.bucket(bucket_name).blob(file_path)
+            if not blob.exists():
+                logger.info(f"File {file_path} no longer exists (likely deleted). Skipping.")
+                return {"status": "ignored", "reason": "file deleted"}
+        except Exception as e:
+            logger.warning(f"Error checking file existence: {e}")
+            # Continue and let validation fail if needed, or return? Safest to continue but be aware.
         
         # 1. Update Status: Processing
         update_status(user_id, "processing", "Validating archive...")
 
         # 2. Gatekeeper Validation
         if not validate_archive_age(bucket_name, file_path):
-             reason = "Data does not meet the 5-year history requirement."
+             reason = "Data does not meet the 3-year history requirement."
              update_status(user_id, "rejected", reason)
              return {"status": "rejected", "reason": reason}
         
@@ -319,14 +387,27 @@ def process_user_data(data: dict) -> dict:
         model = GenerativeModel("gemini-2.5-flash")
         
         prompt = f"""
-        You are a psychological profiler. Analyze the following social media data archive (text) and generate a "Psychographic Bio".
+        You are a master storyteller and psychological profiler. Analyze the following social media data and craft a captivating profile that reads like poetry, not a clinical report.
+        
+        INSTRUCTIONS:
+        - Write the bio like you're telling a story about someone fascinating you just met at a dim-lit bar
+        - Use vivid imagery, metaphors, and emotional language
+        - Avoid corporate speak, buzzwords, or anything that sounds "AI-generated"
+        - Make it feel intimate, human, and real
+        - Think: short story opening, song lyrics, or a perfectly crafted Instagram caption that stops the scroll
+        - Capture contradictions and complexity - real people aren't one-dimensional
+        
+        EXAMPLES OF THE VIBE:
+        - "Lives for Sunday mornings with black coffee and old vinyl. The type to debate philosophy at 2am but ghost you for a week when life gets loud."
+        - "Equal parts chaos and calculated risk. Collects vintage cameras but never prints the photos. Laughs too loud in quiet spaces."
+        - "Finds poetry in gas station receipts. Cries at dog videos but won't admit it. The friend who shows up at 3am, no questions asked."
         
         Data:
         {clean_text}
         
         Output must be JSON with the following schema:
         {{
-            "generatedBio": "3-sentence summary of who they actually are",
+            "generatedBio": "2-3 sentence narrative that captures their essence poetically and memorably",
             "keyTraits": ["Trait1", "Trait2", "Trait3", "Trait4", "Trait5"],
             "communicationStyle": "A short description of their style"
         }}

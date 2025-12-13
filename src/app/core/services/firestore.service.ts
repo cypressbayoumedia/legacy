@@ -1,5 +1,5 @@
-import { Injectable, inject } from '@angular/core';
-import { Firestore, doc, docData } from '@angular/fire/firestore';
+import { Injectable, inject, NgZone } from '@angular/core';
+import { Firestore, doc, onSnapshot, setDoc } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
 import { Auth } from '@angular/fire/auth';
 
@@ -9,6 +9,7 @@ import { Auth } from '@angular/fire/auth';
 export class FirestoreService {
     private firestore = inject(Firestore);
     private auth = inject(Auth);
+    private zone = inject(NgZone);
 
     /**
      * Returns a real-time stream of the current user's document.
@@ -19,7 +20,20 @@ export class FirestoreService {
             throw new Error('User must be logged in to get profile');
         }
         const userDocRef = doc(this.firestore, `users/${user.uid}`);
-        return docData(userDocRef);
+
+        return new Observable(observer => {
+            const unsubscribe = onSnapshot(userDocRef, (snapshot) => {
+                this.zone.run(() => {
+                    observer.next(snapshot.data());
+                });
+            }, (error) => {
+                this.zone.run(() => {
+                    observer.error(error);
+                });
+            });
+
+            return () => unsubscribe();
+        });
     }
 
     /**
@@ -27,8 +41,6 @@ export class FirestoreService {
      */
     async updateUser(uid: string, data: any): Promise<void> {
         const userDocRef = doc(this.firestore, `users/${uid}`);
-        // Import setDoc or updateDoc dynamically or just use set with merge
-        const { setDoc } = await import('@angular/fire/firestore');
         return setDoc(userDocRef, data, { merge: true });
     }
 }
