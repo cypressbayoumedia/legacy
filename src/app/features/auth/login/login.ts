@@ -12,10 +12,8 @@ import { Auth, GoogleAuthProvider, signInWithPopup } from '@angular/fire/auth';
       <nav class="fixed top-0 w-full z-50 transition-all duration-300 backdrop-blur-xl bg-black/80 border-b border-white/5">
         <div class="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
           <div class="text-2xl font-bold tracking-tighter flex items-center gap-2">
-            <span class="bg-clip-text text-transparent bg-gradient-to-r from-rose-500 via-fuchsia-500 to-indigo-500">
-              Legacy
-            </span>
-            <span class="text-xs font-mono px-2 py-0.5 rounded-full border border-white/20 text-white/50 uppercase tracking-widest">
+            <img src="assets/logo.svg" alt="Legacy" class="h-10 w-auto">
+            <span class="text-xs font-mono px-2 py-0.5 rounded-full border border-white/20 text-white/50 uppercase tracking-widest ml-2">
               Beta
             </span>
           </div>

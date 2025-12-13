@@ -143,12 +143,29 @@ export class Upload {
   private userProfile = toSignal(this.firestoreService.getUserProfile());
 
   uploadProgress = signal(0);
+  private uploadStartTime = signal<number | null>(null);
 
   // Computed state from profile data
   processingStatus = computed<'idle' | 'uploading' | 'processing' | 'completed' | 'rejected' | 'failed'>(() => {
-    const status = this.userProfile()?.processingStatus;
-    // We also need to account for local uploading state which overrides the DB status momentarily
+    const profile = this.userProfile();
+    const status = profile?.processingStatus;
+
+    // 1. Uploading state (local)
     if (this.uploadProgress() > 0 && this.uploadProgress() < 100) return 'uploading';
+
+    // 2. Waiting for Backend state (gap between upload done and backend start)
+    // If we started an upload recently, and the profile hasn't been updated since then,
+    // we show 'processing' to avoid showing the old 'completed' state.
+    if (this.uploadStartTime() && profile?.lastUpdated) {
+      const lastUpdatedMs = profile.lastUpdated?.toMillis ? profile.lastUpdated.toMillis() : 0;
+      if (lastUpdatedMs < this.uploadStartTime()!) {
+        return 'processing';
+      }
+    } else if (this.uploadStartTime() && !profile) {
+      // First time upload, no profile yet
+      return 'processing';
+    }
+
     return status || 'idle';
   });
 
@@ -189,6 +206,7 @@ export class Upload {
     this.error.set('');
     // Note: status is computed, but we can set progress to trigger 'uploading' derived state
     this.uploadProgress.set(1);
+    this.uploadStartTime.set(Date.now());
 
     this.storageService.uploadFile(file).subscribe({
       next: (data) => {

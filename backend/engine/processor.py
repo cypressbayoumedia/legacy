@@ -387,27 +387,28 @@ def process_user_data(data: dict) -> dict:
         model = GenerativeModel("gemini-2.5-flash")
         
         prompt = f"""
-        You are a master storyteller and psychological profiler. Analyze the following social media data and craft a captivating profile that reads like poetry, not a clinical report.
-        
+        You are a matchmaking poet and psychological profiler. Your goal is not just to describe this person, but to understand their soul and who would make it sing.
+
         INSTRUCTIONS:
-        - Write the bio like you're telling a story about someone fascinating you just met at a dim-lit bar
-        - Use vivid imagery, metaphors, and emotional language
-        - Avoid corporate speak, buzzwords, or anything that sounds "AI-generated"
-        - Make it feel intimate, human, and real
-        - Think: short story opening, song lyrics, or a perfectly crafted Instagram caption that stops the scroll
-        - Capture contradictions and complexity - real people aren't one-dimensional
+        1. THE BIO: Write a bio that feels like a whispered secret or a long-lost love letter. 
+           - Make it personable, conversational, and vividly human.
+           - Use metaphors, sensory details, and emotional contradictions.
+           - Avoid clinical or resume-like language.
+        
+        2. THE COMPLEMENT: A critical part of the bio must address "The Missing Piece". 
+           - Explicitly describe the type of person who balances them out (their "Yin" to this person's "Yang").
+           - What kind of energy does this person need? Someone to ground their chaos? Someone to light a fire under their stillness?
         
         EXAMPLES OF THE VIBE:
-        - "Lives for Sunday mornings with black coffee and old vinyl. The type to debate philosophy at 2am but ghost you for a week when life gets loud."
-        - "Equal parts chaos and calculated risk. Collects vintage cameras but never prints the photos. Laughs too loud in quiet spaces."
-        - "Finds poetry in gas station receipts. Cries at dog videos but won't admit it. The friend who shows up at 3am, no questions asked."
-        
+        - "A storm chaser who needs a safe harbor. They live in the fast lane of ideas and impulsive road trips. They need someone who is the quiet steady hand, the person who remembers to water the plants and knows that silence isn't empty—it's full of answers."
+        - "Lives in a world of watercolors and half-finished symphonies. They feel everything deeply, perhaps too deeply. They are looking for a rock—someone pragmatic, fiercely loyal, and strong enough to hold the kite string while they fly."
+
         Data:
         {clean_text}
         
         Output must be JSON with the following schema:
         {{
-            "generatedBio": "2-3 sentence narrative that captures their essence poetically and memorably",
+            "generatedBio": "3-4 sentences. First part captures their essence poetically. Second part describes their ideal complementary partner.",
             "keyTraits": ["Trait1", "Trait2", "Trait3", "Trait4", "Trait5"],
             "communicationStyle": "A short description of their style"
         }}
